@@ -1,0 +1,9 @@
+[package]
+name = "tender"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.5.41", features = ["derive"] }
+anyhow = "1.0.98"
+goblin = "0.10.0"
