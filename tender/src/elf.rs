@@ -1,4 +1,3 @@
-use std::fmt::format;
 use anyhow::{Result, Context, bail};
 use goblin::elf::Elf;
 use std::fs;
