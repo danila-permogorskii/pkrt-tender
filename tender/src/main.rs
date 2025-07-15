@@ -71,6 +71,35 @@ fn main() -> Result<()> {
             println!("  Layout strategy: {}",
                 if base_addr == 0 { "Starts at zero (needs special handling)" }
                 else { "Normal base address" });
+
+            // Add this to main.rs after your existing ELF analysis printout
+            println!("\n--- Memory Layout Analysis ---");
+            let memory_layout = elf::plan_memory_layout(&elf_info);
+
+            println!("Guest memory requirements:");
+            println!("  Base address: 0x{:x}", memory_layout.guest_base_addr);
+            println!("  Memory span: 0x{:x} bytes ({:.1} KB)",
+                     memory_layout.guest_memory_span,
+                     memory_layout.guest_memory_span as f64 / 1024.0);
+            println!("  End address: 0x{:x}", memory_layout.guest_end_addr);
+            println!("  Loadable segments: {}", memory_layout.loadable_segments_count);
+
+            println!("\nMemory mapping strategy:");
+            println!("  Strategy: {}", memory_layout.mapping_strategy);
+            println!("  Suggested host base: 0x{:x}", memory_layout.suggested_host_base);
+            println!("  Needs address translation: {}", memory_layout.needs_address_translation);
+            println!("  Total allocation needed: 0x{:x} bytes ({:.1} KB)",
+                     memory_layout.total_allocation_size,
+                     memory_layout.total_allocation_size as f64 / 1024.0);
+
+            println!("\nUnikernel compatibility:");
+            println!("  Compatible: {}", memory_layout.is_unikernel_compatible);
+            if !memory_layout.compatibility_issues.is_empty() {
+                println!("  Issues:");
+                for issue in &memory_layout.compatibility_issues {
+                    println!("    - {}", issue);
+                }
+            }
         }
         Err(e) => {
             println!("Elf parsing filed: {}", e);

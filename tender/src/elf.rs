@@ -138,24 +138,130 @@ pub fn analyze_memory_layout(segments: &[ElfSegment]) -> (u64, u64, usize) {
     let loadable_segments: Vec<_> = segments.iter()
         .filter(|s| s.is_loadable())
         .collect();
-    
-    if loadable_segments.is_empty() { 
+
+    if loadable_segments.is_empty() {
         return (0,0,0);
     }
-    
+
     // Find the lows and highest addresses
     let min_addr = loadable_segments.iter()
         .map(|s| s.virtual_addr)
         .min()
         .unwrap_or(0);
-    
+
     let max_addr = loadable_segments.iter()
         .map(|s| s.virtual_addr + s.size)
         .max()
         .unwrap_or(0);
-    
+
     let total_span = max_addr - min_addr;
     let segment_count = loadable_segments.len();
 
     (min_addr, total_span, segment_count)
+}
+
+#[derive(Debug)]
+pub struct MemoryLayout {
+    // Guest's perspective - what the ELF binary expects
+    pub guest_base_addr: u64,   // Where guest thinks it starts (usually 0x0)
+    pub guest_memory_span: u64, // Total bytes from lowest to highest address
+    pub guest_end_addr: u64,    // Highest address the guest needs
+
+    // Host mapping strategy - how we'll actually provide the memory
+    pub suggested_host_base: u64,       // Safe address where we should map guest memory
+    pub mapping_strategy: String,       // Human-readable description of our approach
+    pub needs_address_translation: bool,// Whether guest/host addresses differ
+
+    // Compatibility analysis
+    pub is_unikernel_compatible: bool,  // Can this run as a unikernel?
+    pub compatibility_issues: Vec<String>, // Problems that prevent unikernel execution
+
+    // Memory allocation details
+    pub total_allocation_size: u64,     // Total host memory to allocate
+    pub loadable_segments_count: usize  // Number of segments we need to map
+}
+
+pub fn plan_memory_layout(elf_info:&ElfInfo) -> MemoryLayout{
+    // First, analyze what the guest binary expects by examining loadable segments
+    let loadadble_segments: Vec<_> = elf_info.segments.iter()
+        .filter(|seg| seg.is_loadable())
+        .collect();
+
+    if loadadble_segments.is_empty() {
+        // No loadable segments means this binary cannot execute
+        return MemoryLayout {
+            guest_base_addr: 0,
+            guest_memory_span: 0,
+            guest_end_addr: 0,
+            suggested_host_base: 0,
+            mapping_strategy: "No loadable segments found".to_string(),
+            needs_address_translation: false,
+            is_unikernel_compatible: false,
+            compatibility_issues: vec!["No loadable segments in ELF library".to_string()],
+            total_allocation_size: 0,
+            loadable_segments_count: 0
+        }
+    }
+
+    // Calculate the guest's address space requirements
+    let guest_base = loadadble_segments.iter()
+        .map(|seg| seg.virtual_addr)
+        .min()
+        .unwrap_or(0);
+
+    let guest_end = loadadble_segments.iter()
+        .map(|seg| seg.virtual_addr + seg.size)
+        .max()
+        .unwrap_or(0);
+
+    let guest_span = guest_end - guest_base;
+
+    // Analyze compatibilty issues that prevent unikernel execution
+    let mut compatibility_issues = Vec::new();
+    let mut is_compatible = true;
+
+    // Check for dynamic linking dependencies (fatal for unikernels)
+    if elf_info.segments.iter().any(|seg| seg.requires_dynamic_linking()) {
+        compatibility_issues.push("Dynamic linking detected (INTERP/DYNAMIC segments)".to_string());
+        is_compatible = false;
+    }
+
+    // Check for problematic base address (the zero-page issue we discussed)
+    let has_zero_page_issue = guest_base < 0x10000; // Linux typically protects below 64KB
+    if has_zero_page_issue {
+        compatibility_issues.push(format!("Base address 0x{:x} conflicts with kernel protection", guest_base));
+    }
+
+    // Determine mapping strategy based on our analysis
+    let (suggested_host_base, mapping_strategy, needs_translation) = if !is_compatible {
+        // If it's not unikernel-compatible, we can't safely map it
+        (0, "Binary incompatible with unikernel execution".to_string(), false)
+    } else if has_zero_page_issue {
+        // Apply Solo5-SPT's solution: map at safe address with address translation
+        let safe_base = 0x100000; // 1MB, well above kernel restrictions
+        (safe_base,
+        format!("Map at 0x{:x} with virtual address translation", safe_base),
+        true)
+    } else {
+        // Guest loads at acceptable address, direct mapping possible
+        (guest_base, "Direct mapping at guest's preferred address".to_string(), false)
+    };
+
+    // Calculate total allocation requirements
+    // Round up to page boundaries for efficient memory monogement
+    let page_size = 4096u64;
+    let total_allocations = ((guest_span + page_size - 1) / page_size) * page_size;
+
+    MemoryLayout {
+        guest_base_addr: guest_base,
+        guest_memory_span: guest_span,
+        guest_end_addr: guest_end,
+        suggested_host_base,
+        mapping_strategy,
+        needs_address_translation: needs_translation,
+        is_unikernel_compatible: is_compatible,
+        compatibility_issues,
+        total_allocation_size: total_allocations,
+        loadable_segments_count: loadadble_segments.len()
+    }
 }
