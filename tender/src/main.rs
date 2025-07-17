@@ -1,23 +1,26 @@
 mod elf;
+mod memory;
 
 use std::fs;
-use clap::{Arg, Command};
+use clap::Parser;
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 
-fn main() -> Result<()> {
-    let matches = Command::new("pkrt-tender")
-        .version("0.1.0")
-        .about("Polykernel runtime tender")
-        .arg(
-            Arg::new("kernel")
-                .help("Path to the unikernel library")
-                .required(true)
-                .value_parser(clap::value_parser!(PathBuf))
-        )
-        .get_matches();
+#[derive(Parser)]
+#[command(name = "pkrt-tender")]
+#[command(about = "PolyKernel Runtime Tender - Multi-language unikernel runtime")]
+struct Args {
+    /// Path to the kernel binary to analyze and potentially execute
+    kernel_binary: PathBuf,
+    
+    /// Test memory allocation without loading guest code
+    #[arg(long, help = "Test memory allocation for the binary")]
+    test_memory: bool,
+}
 
-    let kernel_path = matches.get_one::<PathBuf>("kernel").unwrap();
+fn main() -> Result<()> {
+    let args = Args::parse();
+    let kernel_path = &args.kernel_binary;
 
     println!("Poly kernel tender v0.1.0");
     println!("Loading kernel: {}", kernel_path.display());
@@ -100,10 +103,122 @@ fn main() -> Result<()> {
                     println!("    - {}", issue);
                 }
             }
+
+            // Test memory allocation if requested
+            if args.test_memory {
+                println!("\n🧪 Testing Memory Allocation");
+                println!("==========================================");
+                test_memory_allocation(&memory_layout)?;
+            }
         }
         Err(e) => {
             println!("Elf parsing filed: {}", e);
             std::process::exit(1);
+        }
+    }
+
+    Ok(())
+}
+
+/// Test the new memory allocation capability
+/// This demonstrates memory allocation without loading guest code yet
+fn test_memory_allocation(layout: &elf::MemoryLayout) -> Result<()> {
+    println!("🔬 Beginning memory allocation test...");
+
+    // Attempt to allocate memory according to our layout plan
+    match memory::allocate_guest_memory(layout) {
+        Ok(allocated) => {
+            println!("✅ Memory allocation successful!");
+
+            // Display detailed allocation information
+            display_allocation_details(&allocated);
+
+            // Test address translation functionality
+            test_address_translation(&allocated)?;
+
+            println!("🎉 Memory allocation test completed successfully!");
+            println!("💡 Ready to proceed to next phase: Guest Memory Loading");
+
+            // The AllocatedMemory will be cleaned up when dropped
+        }
+        Err(e) => {
+            println!("❌ Memory allocation failed: {}", e);
+            println!("💭 This is expected for incompatible binaries");
+
+            // For incompatible binaries, explain why allocation failed
+            if !layout.is_unikernel_compatible {
+                println!("\n📋 Analysis:");
+                println!("   This binary cannot be loaded as a unikernel because:");
+                for issue in &layout.compatibility_issues {
+                    println!("   • {}", issue);
+                }
+                println!("   Memory allocation is intentionally skipped for safety.");
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Display detailed information about successful memory allocation
+fn display_allocation_details(allocated: &memory::AllocatedMemory) {
+    println!("\n📊 Memory Allocation Details:");
+    println!("   Host mapping address: {:p}", allocated.host_mapping);
+    println!("   Guest base address: 0x{:x}", allocated.guest_base);
+    println!("   Host base address: 0x{:x}", allocated.host_base);
+    println!("   Total allocated size: {} bytes", allocated.total_size);
+
+    if allocated.address_offset != 0 {
+        println!("   Address translation: guest + 0x{:x} = host", allocated.address_offset);
+    } else {
+        println!("   Address translation: direct mapping (no offset)");
+    }
+
+    println!("   Memory regions: {} regions allocated", allocated.regions.len());
+    for (i, region) in allocated.regions.iter().enumerate() {
+        println!("     Region {}: guest 0x{:x}, host {:p}, {} bytes, {:?}",
+                 i, region.guest_addr, region.host_addr, region.size, region.permissions);
+    }
+}
+
+/// Test the address translation functionality
+/// This validates that our guest-to-host address mapping works correctly
+fn test_address_translation(allocated: &memory::AllocatedMemory) -> Result<()> {
+    println!("\n🧮 Testing address translation:");
+
+    // Test translation for the guest base address
+    let guest_start = allocated.guest_base;
+    match allocated.guest_to_host_addr(guest_start) {
+        Ok(host_ptr) => {
+            println!("   ✅ Guest 0x{:x} → Host {:p}", guest_start, host_ptr);
+        }
+        Err(e) => {
+            println!("   ❌ Translation failed: {}", e);
+            return Err(e);
+        }
+    }
+
+    // Test translation for an address in the middle of the allocation
+    let guest_middle = allocated.guest_base + (allocated.total_size / 2);
+    match allocated.guest_to_host_addr(guest_middle) {
+        Ok(host_ptr) => {
+            println!("   ✅ Guest 0x{:x} → Host {:p}", guest_middle, host_ptr);
+        }
+        Err(e) => {
+            println!("   ❌ Mid-range translation failed: {}", e);
+            return Err(e);
+        }
+    }
+
+    // Test translation for an invalid address (should fail safely)
+    let invalid_addr = allocated.guest_base + allocated.total_size + 0x1000;
+    match allocated.guest_to_host_addr(invalid_addr) {
+        Ok(_) => {
+            println!("   ❌ Invalid address 0x{:x} should have failed translation", invalid_addr);
+            return Err(anyhow::anyhow!("Address validation failed"));
+        }
+        Err(_) => {
+            println!("   ✅ Invalid address 0x{:x} correctly rejected", invalid_addr);
         }
     }
 
