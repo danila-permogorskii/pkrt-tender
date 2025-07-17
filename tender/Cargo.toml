@@ -7,3 +7,5 @@ edition = "2024"
 clap = { version = "4.5.41", features = ["derive"] }
 anyhow = "1.0.98"
 goblin = "0.10.0"
+regex = "1.11.1"
+libc = "1.0.0-alpha.1" # Memory management system calls
