@@ -1,5 +1,6 @@
 mod elf;
 mod memory;
+mod loader;
 
 use std::fs;
 use clap::Parser;
@@ -12,7 +13,7 @@ use std::path::PathBuf;
 struct Args {
     /// Path to the kernel binary to analyze and potentially execute
     kernel_binary: PathBuf,
-    
+
     /// Test memory allocation without loading guest code
     #[arg(long, help = "Test memory allocation for the binary")]
     test_memory: bool,
@@ -224,3 +225,4 @@ fn test_address_translation(allocated: &memory::AllocatedMemory) -> Result<()> {
 
     Ok(())
 }
+
