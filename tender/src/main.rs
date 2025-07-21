@@ -5,11 +5,13 @@
 mod elf;
 mod memory;
 mod loader;
+mod seccomp;
 
 use anyhow::Result;
 use clap::Parser;
 use std::fs;
 use std::path::PathBuf;
+use crate::seccomp::test_security_framework as other_test_security_framework;
 
 #[derive(Parser)]
 #[command(name = "pkrt-tender")]
@@ -26,6 +28,9 @@ struct Args {
     /// Test complete ELF loading (allocation + segments) (Microphase 6)
     #[arg(long, help = "Test complete ELF loading (allocation + segments)")]
     test_loading: bool,
+
+    #[arg(long, help = "Test seccomp security framework")]
+    test_security: bool,
 
     /// Show detailed segment analysis
     #[arg(long, help = "Show detailed ELF segment analysis")]
@@ -59,6 +64,14 @@ fn main() -> Result<()> {
     // Display comprehensive analysis
     display_analysis(&elf_info, &memory_layout, args.verbose);
 
+    if args.test_security {
+        println!("\n🛡️  Testing Security Framework (Microphase 7)");
+        println!("=============================================");
+
+        test_security_framework()?;
+        return Ok(());
+    }
+
     // Phase 3: Test memory allocation if requested (Microphase 5)
     if args.test_memory {
         println!("\n🧪 Testing Memory Allocation (Microphase 5)");
@@ -85,7 +98,26 @@ fn main() -> Result<()> {
                  env!("CARGO_PKG_NAME"), args.kernel_binary.display());
     }
 
+    println!("\n🛡️  Security Preview:");
+    display_security_preview();
+
     Ok(())
+}
+
+fn test_security_framework() -> Result<()> {
+    seccomp::test_security_framework()
+}
+
+fn display_security_preview() {
+    match seccomp::SeccompFilter::new() {
+        Ok(filter) => {
+            filter.display_policy();
+            println!("\n💡 Use --test-security to test the complete security framework");
+        }
+        Err(e) => {
+            println!("   ⚠️  Security framework not available: {}", e);
+        }
+    }
 }
 
 /// Display comprehensive ELF and memory analysis

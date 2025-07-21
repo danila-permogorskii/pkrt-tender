@@ -9,3 +9,4 @@ anyhow = "1.0.98"
 goblin = "0.10.0"
 regex = "1.11.1"
 libc = "1.0.0-alpha.1" # Memory management system calls
+libseccomp = { version = "0.4.0", features = ["const-syscall"] }
