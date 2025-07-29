@@ -41,7 +41,10 @@ struct Args {
     test_enforcement: bool,
 
     #[arg(long, help = "Test register setup and guest state preparation")]
-    test_register_setup: bool
+    test_register_setup: bool,
+
+    #[arg(long, help = "Test complete guest execution")]
+    test_execution: bool
 }
 
 fn main() -> Result<()> {
@@ -58,10 +61,11 @@ fn main() -> Result<()> {
     println!("🚀 PolyKernel Runtime Tender (pkrt-tender) v0.1.0");
     println!("📂 Analyzing kernel binary: {}", args.kernel_binary.display());
 
+    display_available_tests();
+
     // Display file size
     let metadata = fs::metadata(&args.kernel_binary)?;
     println!("File size: {} bytes ({:.1} KB)", metadata.len(), metadata.len() as f64 / 1024.0);
-
     // Phase 1: Analyze the ELF binary (Microphases 2-3) - Using your actual function name
     let elf_info = elf::parse_elf(&args.kernel_binary)?;
 
@@ -122,6 +126,14 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
+    if args.test_execution {
+        println!("\n🚀 Testing Complete Guest Execution (Microphase 10 - FINAL)");
+        println!("==========================================================");
+        println!("🎯 This is the culmination of the entire PolyKernel project!");
+
+        test_complete_execution(&args.kernel_binary, &elf_info, &memory_layout)?;
+        return Ok(());
+    }
 
     Ok(())
 }
@@ -436,4 +448,72 @@ fn test_register_setup(
     println!("  Ready to start run");
 
     Ok(())
+}
+
+fn test_complete_execution(
+    elf_path: &PathBuf,
+    elf_info: &elf::ElfInfo,
+    layout: &elf::MemoryLayout
+) -> Result<()> {
+    println!("🔄 Complete execution pipeline test:");
+    println!("   ELF → Memory → Security → Registers → EXECUTION");
+
+    // Step 1: Load guest binary (reusing existing pipeline)
+    println!("\n📚 Step 1: Loading guest binary...");
+    let loaded_guest = loader::load_guest_binary(elf_path, elf_info, layout)?;
+    println!("   ✅ Guest binary loaded successfully");
+
+    // Step 2: Setup and install security framework
+    println!("\n🛡️  Step 2: Installing security enforcement...");
+    let mut filter = seccomp::setup_security_framework()
+        .context("Failed to setup security framework")?;
+
+    filter.install_filter()
+        .context("Failed to install security filter")?;
+
+    filter.validate_security()
+        .context("Security validation failed")?;
+    println!("   ✅ Hardware-enforced security active");
+
+    // Step 3: Setup guest execution state
+    println!("\n🎮 Step 3: Configuring guest execution state...");
+    let mut guest_state = guest_exec::GuestExecutionState::new(
+        elf_info,
+        loaded_guest.allocated_memory
+    )?;
+
+    guest_state.validate_state()?;
+    guest_state.prepare_for_execution()?;
+    guest_state.display_execution_context();
+    println!("   ✅ Guest execution state ready");
+
+    // Step 4: Final validation
+    println!("\n🔍 Step 4: Final execution validation...");
+    guest_state.validate_execution_readiness()?;
+    println!("   ✅ All systems ready for guest execution");
+
+    // Step 5: Execute guest unikernel
+    println!("\n🚀 Step 5: EXECUTING GUEST UNIKERNEL");
+    println!("======================================");
+    println!("🎉 PolyKernel Runtime: Launching unikernel execution!");
+    println!("Expected: Guest will output message and exit cleanly");
+    println!("Note: Process will terminate via guest exit_group syscall");
+    println!();
+
+    // THE MOMENT OF TRUTH: Execute the guest
+    guest_state.execute_guest()?;
+
+    // This line should never be reached
+    unreachable!("Guest execution should have terminated the process");
+}
+
+fn display_available_tests() {
+    println!("\n💡 Available Tests:");
+    println!("   --test-memory          Test memory allocation (Microphase 5)");
+    println!("   --test-loading         Test complete ELF loading (Microphase 6)");
+    println!("   --test-security        Test seccomp security framework (Microphase 7)");
+    println!("   --test-enforcement     Test security enforcement (Microphase 8)");
+    println!("   --test-register-setup  Test register setup (Microphase 9)");
+    println!("   --test-execution       Test complete execution (Microphase 10 - FINAL)");
+    println!("   --verbose              Show detailed segment analysis");
 }
