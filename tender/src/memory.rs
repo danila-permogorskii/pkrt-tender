@@ -170,6 +170,23 @@ impl AllocatedMemory {
         let host_addr = (guest_addr as i64 + self.address_offset) as u64;
         Ok(host_addr as *mut u8)
     }
+    
+    pub fn translate_guest_to_host(&self, guest_addr: u64) -> Result<u64> {
+        if guest_addr < self.guest_base {
+            anyhow::bail!("Guest address 0x{:x} below guest base 0x{:x}",
+            guest_addr, self.guest_base);
+        }
+        
+        let guest_offset = guest_addr - self.guest_base;
+        let host_addr = self.host_base + guest_offset;
+        
+        if host_addr >= self.host_base + self.total_size {
+            anyhow::bail!("Translated address 0x{:x} outside allocated memory",
+            host_addr);
+        }
+        
+        Ok(host_addr)
+    }
 }
 
 impl Drop for AllocatedMemory {

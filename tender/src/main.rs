@@ -6,6 +6,7 @@ mod elf;
 mod memory;
 mod loader;
 mod seccomp;
+mod guest_exec;
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -37,7 +38,10 @@ struct Args {
     verbose: bool,
 
     #[arg(long, help = "Test security enforcement (actual filter installation)")]
-    test_enforcement: bool
+    test_enforcement: bool,
+
+    #[arg(long, help = "Test register setup and guest state preparation")]
+    test_register_setup: bool
 }
 
 fn main() -> Result<()> {
@@ -108,6 +112,14 @@ fn main() -> Result<()> {
         println!("\n Testing security enforcement");
 
         test_security_enforcement()?;
+    }
+
+    if args.test_register_setup {
+        println!("\n🎮 Testing Register Setup (Microphase 9)");
+        println!("========================================");
+
+        test_register_setup(&args.kernel_binary, &elf_info, &memory_layout)?;
+        return Ok(());
     }
 
 
@@ -398,5 +410,30 @@ fn test_authorized_syscalls() -> Result<()> {
     println!("  clock_gettime syscall working");
 
     println!("  All authorised syscalls functioning");
+    Ok(())
+}
+
+fn test_register_setup(
+    elf_path: &PathBuf,
+    elf_info: &elf::ElfInfo,
+    layout: &elf::MemoryLayout
+) -> Result<()> {
+    println!("\n    Testing register setup");
+
+    // Load guest binary with existing pipeline
+    let loaded_guest = loader::load_guest_binary(elf_path, elf_info, layout)?;
+
+    let mut guest_state = guest_exec::GuestExecutionState::new(
+        elf_info,
+        loaded_guest.allocated_memory
+    )?;
+
+    guest_state.validate_state();
+
+    guest_state.display_state();
+
+    println!("  Register setup testing completed");
+    println!("  Ready to start run");
+
     Ok(())
 }
