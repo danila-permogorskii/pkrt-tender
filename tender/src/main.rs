@@ -7,7 +7,7 @@ mod memory;
 mod loader;
 mod seccomp;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
 use std::fs;
 use std::path::PathBuf;
@@ -35,6 +35,9 @@ struct Args {
     /// Show detailed segment analysis
     #[arg(long, help = "Show detailed ELF segment analysis")]
     verbose: bool,
+
+    #[arg(long, help = "Test security enforcement (actual filter installation)")]
+    test_enforcement: bool
 }
 
 fn main() -> Result<()> {
@@ -88,6 +91,9 @@ fn main() -> Result<()> {
         test_elf_loading(&args.kernel_binary, &elf_info, &memory_layout)?;
     }
 
+    println!("\n🛡️  Security Preview:");
+    display_security_preview();
+
     // If no specific tests requested, show available options
     if !args.test_memory && !args.test_loading {
         println!("\n💡 Available Tests:");
@@ -98,8 +104,12 @@ fn main() -> Result<()> {
                  env!("CARGO_PKG_NAME"), args.kernel_binary.display());
     }
 
-    println!("\n🛡️  Security Preview:");
-    display_security_preview();
+    if args.test_enforcement {
+        println!("\n Testing security enforcement");
+
+        test_security_enforcement()?;
+    }
+
 
     Ok(())
 }
@@ -347,5 +357,46 @@ fn test_address_translation(allocated: &memory::AllocatedMemory) -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+fn test_security_enforcement() -> Result<()> {
+    println!("\n Testing security enforcement");
+
+    // Create and setup security framework
+    let mut filter = seccomp::setup_security_framework()
+        .context("Failed to setup security framework")?;
+
+    println!("\nInstalling security filter");
+
+    filter.install_filter()
+        .context("Failed to install security filter")?;
+
+    println!("Security filter installed successfully");
+
+    filter.validate_security()
+        .context("Security validation failed")?;
+
+    // Test that authorized syscalls still work
+    test_authorized_syscalls()?;
+
+    println!("Security enforcement testing completed");
+
+
+    Ok(())
+}
+
+fn test_authorized_syscalls() -> Result<()> {
+    println!("\n Testing autharised syscalls:");
+
+    // Test write (stdout) - should work
+    println!("  write syscall (stdout) working");
+
+    // Test clock_gettime - should work
+    use std::time::SystemTime;
+    let _now = SystemTime::now();
+    println!("  clock_gettime syscall working");
+
+    println!("  All authorised syscalls functioning");
     Ok(())
 }
